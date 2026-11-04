@@ -3,8 +3,10 @@
   "use strict";
 
   const PREFIX = "[Khan Auto Login]";
-  const LOGIN_HOST = "accounts.khanacademy.org";
-  const LOGIN_PATH = "/login";
+  const LOGIN_HOSTS = [
+    "accounts.khanacademy.org",
+    "www.khanacademy.org",
+  ];
 
   // Prevent duplicate initialization in this document.
   if (globalThis.__khanAutoLoginInitialized) {
@@ -19,8 +21,9 @@
 
   function isLoginPage() {
     return (
-      window.location.hostname === LOGIN_HOST &&
-      window.location.pathname === LOGIN_PATH
+      window.location.protocol === "https:" &&
+      LOGIN_HOSTS.includes(window.location.hostname) &&
+      /^\/login\/?$/.test(window.location.pathname)
     );
   }
 

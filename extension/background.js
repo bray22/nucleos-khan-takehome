@@ -7,13 +7,25 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
-    // Only respond to the intended login page.
-    const senderUrl = sender.url || "";
+    // Only respond to the supported login pages.
+    let senderUrl;
+
+    try {
+      senderUrl = new URL(sender.url || "");
+    } catch {
+      sendResponse({
+        success: false,
+        error: "Unauthorized credential request",
+      });
+      return false;
+    }
 
     if (
-      !senderUrl.startsWith(
-        "https://accounts.khanacademy.org/login"
-      )
+      ![
+        "https://accounts.khanacademy.org",
+        "https://www.khanacademy.org",
+      ].includes(senderUrl.origin) ||
+      !/^\/login\/?$/.test(senderUrl.pathname)
     ) {
       sendResponse({
         success: false,
