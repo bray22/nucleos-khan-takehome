@@ -7,3 +7,6 @@ playwright-report/
 test-results/
 student-registration-debug.png
 *-debug.png
+.env
+.env.*
+!.env.example

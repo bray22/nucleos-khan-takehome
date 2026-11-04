@@ -1,11 +1,31 @@
 
+require("dotenv").config();
+
 const { chromium } = require("playwright");
+
+const SIGNUP_URL = "https://www.khanacademy.org/signup";
+
+// Use the actual birth month and year of the adult registering.
+const BIRTH_MONTH = "Jul";
+const BIRTH_YEAR = "1974";
 
 async function main() {
   let browser;
 
   try {
-    // Launch Chromium first
+    // Load credentials from .env.
+    const email = process.env.KHAN_EMAIL;
+    const password = process.env.KHAN_PASSWORD;
+
+    if (!email || !password) {
+      throw new Error(
+        "Missing KHAN_EMAIL or KHAN_PASSWORD in .env"
+      );
+    }
+
+    console.log("[Onboarding] Starting registration...");
+
+    // Launch Chromium.
     browser = await chromium.launch({
       headless: false,
       slowMo: 100,
@@ -16,40 +36,39 @@ async function main() {
 
     // Browser diagnostics.
     page.on("close", () => {
-      // console.log("[Browser] Page closed");
+      console.log("[Browser] Page closed");
     });
 
     page.on("crash", () => {
-      // console.error("[Browser] Page crashed");
+      console.error("[Browser] Page crashed");
     });
 
     browser.on("disconnected", () => {
-      // console.log("[Browser] Browser disconnected");
+      console.log("[Browser] Browser disconnected");
     });
 
-    // Open Khan Academy registration.
-    // console.log("[Onboarding] Opening Khan Academy...");
+    // Step 1: Open Khan Academy.
+    console.log("[Onboarding] Opening Khan Academy...");
 
-    await page.goto("https://www.khanacademy.org/signup", {
+    await page.goto(SIGNUP_URL, {
       waitUntil: "domcontentloaded",
       timeout: 30000,
     });
 
-    // console.log("[Onboarding] Current URL:", page.url());
-    // console.log("[Onboarding] Page title:", await page.title());
+    console.log("[Onboarding] Page loaded.");
 
-    // Handle cookie consent if present.
+    // Step 2: Handle cookie consent if present.
     const necessaryCookies = page.getByRole("button", {
       name: "Strictly Necessary Only",
     });
 
     if (await necessaryCookies.isVisible().catch(() => false)) {
       await necessaryCookies.click();
-      // console.log("[Onboarding] Cookie preferences selected.");
+      console.log("[Onboarding] Cookie preferences selected.");
     }
 
-    // Select Student registration.
-    // console.log("[Onboarding] Selecting Student registration...");
+    // Step 3: Select learner registration.
+    console.log("[Onboarding] Selecting learner registration...");
 
     await page
       .getByText("Student learning on my own", {
@@ -57,9 +76,9 @@ async function main() {
       })
       .click({ timeout: 15000 });
 
-    // console.log("[Onboarding] Student registration selected.");
+    console.log("[Onboarding] Learner registration selected.");
 
-    //  Wait for date-of-birth screen.
+    // Step 4: Wait for date-of-birth screen.
     await page
       .getByText("Date of birth", { exact: true })
       .waitFor({
@@ -67,13 +86,10 @@ async function main() {
         timeout: 15000,
       });
 
-    // console.log("[Onboarding] Date-of-birth page detected.");
+    console.log("[Onboarding] Date-of-birth screen detected.");
 
-    // Select birth month.
-    // Use the actual birth month of the adult registering.
-    const birthMonth = "Jul";
-
-    // console.log("[Onboarding] Selecting birth month...");
+    // Step 5: Select birth month.
+    console.log("[Onboarding] Selecting birth month...");
 
     await page
       .locator('button[aria-label="Month"]')
@@ -81,18 +97,15 @@ async function main() {
 
     await page
       .getByRole("option", {
-        name: birthMonth,
+        name: BIRTH_MONTH,
         exact: true,
       })
-      .click();
+      .click({ timeout: 15000 });
 
-    // console.log("[Onboarding] Birth month selected.");
+    console.log("[Onboarding] Birth month selected.");
 
-    // Select birth year.
-    // Use the actual birth year of the adult registering.
-    const birthYear = "1974";
-
-    // console.log("[Onboarding] Selecting birth year...");
+    // Step 6: Select birth year.
+    console.log("[Onboarding] Selecting birth year...");
 
     await page
       .locator('button[aria-label="Year"]')
@@ -100,15 +113,15 @@ async function main() {
 
     await page
       .getByRole("option", {
-        name: birthYear,
+        name: BIRTH_YEAR,
         exact: true,
       })
-      .click();
+      .click({ timeout: 15000 });
 
-    // console.log("[Onboarding] Birth year selected.");
+    console.log("[Onboarding] Birth year selected.");
 
-    // Advance to the next registration step.
-    // console.log("[Onboarding] Clicking Next...");
+    // Step 7: Continue to registration form.
+    console.log("[Onboarding] Clicking Next...");
 
     await page
       .getByRole("button", {
@@ -117,62 +130,79 @@ async function main() {
       })
       .click({ timeout: 15000 });
 
-    // console.log("[Onboarding] Advanced to next registration step.");
+    // Step 8: Locate registration fields.
+    const emailInput = page.locator('input[type="email"]');
+    const passwordInput = page.locator('input[type="password"]');
+    const termsCheckbox = page.locator('input[type="checkbox"]');
 
-    // Inspect the next screen.
-    const nextPageText = await page
-      .locator("main")
-      .innerText()
-      .catch(() => page.locator("body").innerText());
-
-    // console.log("\n[Onboarding] Next screen:");
-    // console.log(nextPageText.slice(0, 3000));
-
-    // Inspect input fields without reading their values.
-    const inputs = await page
-      .locator("input")
-      .evaluateAll((elements) =>
-        elements.map((input) => ({
-          type: input.type,
-          name: input.name,
-          placeholder: input.placeholder,
-          ariaLabel: input.getAttribute("aria-label"),
-          autocomplete: input.autocomplete,
-        }))
-      );
-
-    // console.log(
-    //   "\n[Onboarding] Input fields:",
-    //   JSON.stringify(inputs, null, 2)
-    // );
-
-    // Inspect buttons on the next screen.
-    const buttons = await page
-      .getByRole("button")
-      .allTextContents();
-
-    // console.log(
-    //   "\n[Onboarding] Buttons:",
-    //   JSON.stringify(buttons, null, 2)
-    // );
-
-    // Step 10: Save screenshot for inspection.
-    await page.screenshot({
-      path: "registration-next-debug.png",
-      fullPage: true,
+    await emailInput.waitFor({
+      state: "visible",
+      timeout: 15000,
     });
 
-    // console.log("\n[Onboarding] Screenshot saved.");
-    // console.log("[Onboarding] No account has been created.");
-    // console.log("[Onboarding] Close the browser when finished.");
+    console.log("[Onboarding] Registration form detected.");
 
-    // Keep Chromium open for manual inspection.
+    // Step 9: Fill credentials without logging them.
+    await emailInput.fill(email);
+    await passwordInput.fill(password);
+
+    console.log("[Onboarding] Credentials entered.");
+
+    // Step 10: Accept terms.
+    // Only run this script after reviewing and agreeing
+    // to Khan Academy's Terms of Service and Privacy Policy.
+    await termsCheckbox.check();
+
+    console.log("[Onboarding] Terms checkbox selected.");
+
+    // Step 11: Verify that the form is ready.
+    const emailReady =
+      (await emailInput.inputValue()) === email;
+
+    const passwordReady =
+      (await passwordInput.inputValue()) === password;
+
+    const termsAccepted =
+      await termsCheckbox.isChecked();
+
+    const formReady =
+      emailReady && passwordReady && termsAccepted;
+
+    if (!formReady) {
+      throw new Error(
+        "Registration form could not be completed"
+      );
+    }
+
+    console.log("[Onboarding] Form ready:", formReady);
+
+    // Step 12: Confirm the submit button exists.
+    const signupButton = page.getByRole("button", {
+      name: "Sign up",
+      exact: true,
+    });
+
+    await signupButton.waitFor({
+      state: "visible",
+      timeout: 15000,
+    });
+
+    console.log("[Onboarding] Sign up button detected.");
+
+    // Do not submit yet.
+    console.log("");
+    console.log("[Onboarding] Registration form is ready.");
+    console.log("[Onboarding] No account has been created.");
+    console.log("[Onboarding] Submission is intentionally disabled.");
+    console.log("[Onboarding] Close Chromium when finished.");
+
+    // Keep browser open for manual inspection.
     await page.waitForEvent("close", {
       timeout: 0,
     });
 
   } catch (error) {
-    // console.error("[Onboarding] Error:", error.message);
+    console.error("[Onboarding] Error:", error.message);
     process.exitCode = 1;
   } finally {
     if (browser && browser.isConnected()) {
@@ -182,6 +212,9 @@ async function main() {
 }
 
 main().catch((error) => {
-  // console.error("[Onboarding] Unexpected error:", error.message);
+  console.error(
+    "[Onboarding] Unexpected error:",
+    error.message
+  );
   process.exitCode = 1;
 });
