@@ -7,6 +7,8 @@
     "accounts.khanacademy.org",
     "www.khanacademy.org",
   ];
+  const ELEMENT_TIMEOUT = 15000;
+  const AUTHENTICATION_TIMEOUT = 15000;
 
   // Prevent duplicate initialization in this document.
   if (globalThis.__khanAutoLoginInitialized) {
@@ -27,7 +29,7 @@
     );
   }
 
-  function waitForElement(selector, timeout = 15000) {
+  function waitForElement(selector, timeout = ELEMENT_TIMEOUT) {
     const existing = document.querySelector(selector);
 
     if (existing) {
@@ -54,6 +56,42 @@
 
       observer.observe(document.documentElement, {
         childList: true,
+        subtree: true,
+      });
+    });
+  }
+
+  function waitForText(selector, timeout) {
+    const getText = () => {
+      const element = document.querySelector(selector);
+      const text = element?.textContent?.trim();
+
+      return text ? { element, text } : null;
+    };
+    const existing = getText();
+
+    if (existing) {
+      return Promise.resolve(existing);
+    }
+
+    return new Promise((resolve, reject) => {
+      const observer = new MutationObserver(() => {
+        const result = getText();
+
+        if (result) {
+          observer.disconnect();
+          clearTimeout(timer);
+          resolve(result);
+        }
+      });
+      const timer = setTimeout(() => {
+        observer.disconnect();
+        reject(new Error("Authentication could not be verified."));
+      }, timeout);
+
+      observer.observe(document.documentElement, {
+        childList: true,
+        characterData: true,
         subtree: true,
       });
     });
@@ -118,6 +156,36 @@
     }
   }
 
+  async function clearLoginAttempt() {
+    try {
+      await chrome.runtime.sendMessage({
+        type: "LOGIN_FAILED",
+      });
+    } catch {
+      // The original login error remains the useful message to display.
+    }
+  }
+
+  async function watchForAuthenticationFailure() {
+    try {
+      const { text } = await waitForText(
+        "#log-in-server-error[role=\"alert\"]",
+        AUTHENTICATION_TIMEOUT
+      );
+
+      await clearLoginAttempt();
+
+      // This is Khan Academy's own message. Do not prefix, rewrite, or
+      // otherwise change its wording.
+      console.error(text);
+    } catch (error) {
+      // A successful login navigates away and destroys this document. If
+      // it is still alive when the deadline expires, verification failed.
+      await clearLoginAttempt();
+      console.error(`${PREFIX} ${error.message}`);
+    }
+  }
+
   async function autoLogin() {
     if (!isLoginPage()) {
       return;
@@ -135,17 +203,20 @@
 
     globalThis.__khanAutoLoginAttempted = true;
 
-    const usernameInput = await waitForElement(
-      "#username-field"
-    );
+    let usernameInput;
+    let passwordInput;
+    let loginButton;
 
-    const passwordInput = await waitForElement(
-      "#current-password-field"
-    );
-
-    const loginButton = await waitForElement(
-      'button[type="submit"]'
-    );
+    try {
+      [usernameInput, passwordInput, loginButton] =
+        await Promise.all([
+          waitForElement("#username-field"),
+          waitForElement("#current-password-field"),
+          waitForElement('button[type="submit"]'),
+        ]);
+    } catch (error) {
+      throw new Error(`Login form unavailable: ${error.message}`);
+    }
 
     log("Login form detected.");
 
@@ -172,6 +243,7 @@
     loginButton.click();
 
     log("Login submitted. Awaiting verification.");
+    await watchForAuthenticationFailure();
   }
 
   autoLogin().catch((error) => {

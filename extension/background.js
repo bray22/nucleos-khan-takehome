@@ -61,6 +61,19 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
+    if (message?.type === "LOGIN_FAILED") {
+      const tabId = getTabId(sender);
+
+      if (!isLoginSender(sender) || tabId === null) {
+        sendResponse({ success: false });
+        return false;
+      }
+
+      pendingLoginAttempts.delete(tabId);
+      sendResponse({ success: true });
+      return false;
+    }
+
     if (message?.type === "LOGIN_VERIFIED") {
       const tabId = getTabId(sender);
 
