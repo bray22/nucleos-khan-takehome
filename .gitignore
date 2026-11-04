@@ -11,3 +11,4 @@ student-registration-debug.png
 .env.*
 !.env.example
 onboarding/.registration-submitted.json
+extension/config.json

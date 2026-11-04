@@ -4,18 +4,24 @@
   "name": "Khan Academy Auto Login",
   "version": "1.0.0",
   "description": "Automatically signs in to Khan Academy using locally configured credentials.",
-  "permissions": [],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "storage"
+  ],
   "host_permissions": [
-    "https://www.khanacademy.org/*",
-    "https://accounts.khanacademy.org/*"
+    "https://accounts.khanacademy.org/*",
+    "https://www.khanacademy.org/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://www.khanacademy.org/login*",
         "https://accounts.khanacademy.org/login*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
