@@ -81,7 +81,7 @@
           });
 
           if (response?.success) {
-            log("Login verification reported successfully.");
+            log("Successfully logged in to Khan Academy");
           } else {
             log(
               response?.error ||

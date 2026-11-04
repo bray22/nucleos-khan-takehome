@@ -11,6 +11,9 @@ const contentSource = fs.readFileSync(
 const backgroundSource = fs.readFileSync(
   path.join(extensionPath, "background.js"), "utf8"
 );
+const verifySource = fs.readFileSync(
+  path.join(extensionPath, "verify.js"), "utf8"
+);
 const hosts = ["www.khanacademy.org", "accounts.khanacademy.org"];
 
 test("manifest registers the worker and both login hosts", () => {
@@ -30,6 +33,7 @@ for (const host of hosts) {
   for (const route of ["/login", "/login/?continue=profile"]) {
     test(`login submits once on ${host}${route}`, async () => {
       let requests = 0;
+      let attempts = 0;
       let clicks = 0;
       const errors = [];
       class Input {
@@ -53,9 +57,13 @@ for (const host of hosts) {
         chrome: {
           runtime: {
             async sendMessage(message) {
-              assert.equal(message.type, "GET_CREDENTIALS");
-              requests += 1;
-              return { success: true, email: "test@example.com", password: "test-password" };
+              if (message.type === "GET_CREDENTIALS") {
+                requests += 1;
+                return { success: true, email: "test@example.com", password: "test-password" };
+              }
+              assert.equal(message.type, "LOGIN_ATTEMPTED");
+              attempts += 1;
+              return { success: true };
             },
           },
         },
@@ -66,6 +74,7 @@ for (const host of hosts) {
       assert.equal(username.value, "test@example.com");
       assert.equal(password.value, "test-password");
       assert.equal(requests, 1);
+      assert.equal(attempts, 1);
       assert.equal(clicks, 1);
       assert.deepEqual(errors, []);
     });
@@ -125,3 +134,87 @@ test("worker accepts only supported login URLs", async () => {
   }
   assert.equal(fetches, 4);
 });
+
+test("worker verifies only a pending login from the same tab", () => {
+  let listener;
+  vm.runInNewContext(backgroundSource, {
+    URL,
+    chrome: {
+      runtime: {
+        onMessage: { addListener(value) { listener = value; } },
+        getURL: (file) => `chrome-extension://test/${file}`,
+      },
+    },
+    fetch() {},
+  });
+
+  function send(message, url, tabId) {
+    let response;
+    listener(message, { url, tab: { id: tabId } }, (value) => {
+      response = value;
+    });
+    return response;
+  }
+
+  const loginUrl = "https://accounts.khanacademy.org/login";
+  const profileUrl = "https://www.khanacademy.org/profile/me/";
+
+  assert.equal(
+    send({ type: "LOGIN_ATTEMPTED" }, loginUrl, 17).success,
+    true
+  );
+  assert.equal(
+    send({ type: "LOGIN_VERIFIED" }, profileUrl, 18).success,
+    false
+  );
+  assert.equal(
+    send({ type: "LOGIN_VERIFIED" }, profileUrl, 17).success,
+    true
+  );
+  assert.equal(
+    send({ type: "LOGIN_VERIFIED" }, profileUrl, 17).success,
+    false
+  );
+});
+
+for (const correlated of [true, false]) {
+  test(
+    `dashboard ${correlated ? "shows" : "does not show"} login success when ${correlated ? "correlated" : "already authenticated"}`,
+    async () => {
+      const logs = [];
+      const headings = ["My account", "My profile", "Learner home"]
+        .map((textContent) => ({ textContent }));
+      const context = vm.createContext({
+        window: { location: new URL("https://www.khanacademy.org/profile/me/") },
+        document: {
+          title: "Dashboard | Khan Academy",
+          querySelectorAll() { return headings; },
+        },
+        console: {
+          log: (...args) => logs.push(args.join(" ")),
+          error() {},
+          warn() {},
+        },
+        setTimeout,
+        chrome: {
+          runtime: {
+            async sendMessage(message) {
+              assert.equal(message.type, "LOGIN_VERIFIED");
+              return correlated
+                ? { success: true }
+                : { success: false, error: "No pending login attempt for this tab" };
+            },
+          },
+        },
+      });
+
+      vm.runInContext(verifySource, context);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      assert.equal(
+        logs.some((entry) => entry.includes("Successfully logged in to Khan Academy")),
+        correlated
+      );
+    }
+  );
+}

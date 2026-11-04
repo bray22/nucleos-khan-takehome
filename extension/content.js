@@ -106,6 +106,18 @@
     return { email, password };
   }
 
+  async function recordLoginAttempt() {
+    const response = await chrome.runtime.sendMessage({
+      type: "LOGIN_ATTEMPTED",
+    });
+
+    if (!response?.success) {
+      throw new Error(
+        response?.error || "Unable to correlate login attempt"
+      );
+    }
+  }
+
   async function autoLogin() {
     if (!isLoginPage()) {
       return;
@@ -151,6 +163,11 @@
 
     log("Credentials entered.");
     log("Submitting login once...");
+
+    // Record the attempt before navigation destroys this document. The
+    // worker associates it with sender.tab.id and only accepts verification
+    // from the authenticated dashboard in that same tab.
+    await recordLoginAttempt();
 
     loginButton.click();
 
