@@ -6,8 +6,8 @@ const LOGIN_ORIGINS = new Set([
   "https://www.khanacademy.org",
 ]);
 const PROFILE_ORIGIN = "https://www.khanacademy.org";
-const ATTEMPT_TTL = 60 * 1000;
-const pendingLoginAttempts = new Map();
+const ATTEMPT_TTL = 5 * 60 * 1000;
+const tabOperations = new Map();
 
 function parseSenderUrl(sender) {
   try {
@@ -27,13 +27,21 @@ function isLoginSender(sender) {
   );
 }
 
-function isProfileSender(sender) {
-  const url = parseSenderUrl(sender);
+function isProfileSender(sender, currentUrl) {
+  const senderUrl = parseSenderUrl(sender);
+  let profileUrl;
+
+  try {
+    profileUrl = new URL(currentUrl || sender.url || "");
+  } catch {
+    return false;
+  }
 
   return Boolean(
-    url &&
-    url.origin === PROFILE_ORIGIN &&
-    /^\/profile\/me\/?$/.test(url.pathname)
+    senderUrl &&
+    senderUrl.origin === PROFILE_ORIGIN &&
+    profileUrl.origin === PROFILE_ORIGIN &&
+    /^\/profile\/me\/?$/.test(profileUrl.pathname)
   );
 }
 
@@ -45,65 +53,58 @@ function getTabId(sender) {
 
 chrome.runtime.onMessage.addListener(
   (message, sender, sendResponse) => {
-    if (message?.type === "LOGIN_ATTEMPTED") {
+    if ([
+      "LOGIN_ATTEMPTED", "LOGIN_FAILED", "LOGIN_VERIFIED", "HAS_PENDING_LOGIN",
+    ].includes(message?.type)) {
       const tabId = getTabId(sender);
+      const isVerifier = message.type === "LOGIN_VERIFIED" ||
+        message.type === "HAS_PENDING_LOGIN";
+      const senderUrl = parseSenderUrl(sender);
+      const authorized = isVerifier
+        ? senderUrl?.origin === PROFILE_ORIGIN &&
+          (message.type === "HAS_PENDING_LOGIN" ||
+            isProfileSender(sender, message.url))
+        : isLoginSender(sender);
 
-      if (!isLoginSender(sender) || tabId === null) {
+      if (!authorized || tabId === null) {
         sendResponse({
           success: false,
-          error: "Unable to correlate login attempt",
+          error: "Unauthorized login outcome request",
         });
         return false;
       }
 
-      pendingLoginAttempts.set(tabId, Date.now());
-      sendResponse({ success: true });
-      return false;
-    }
-
-    if (message?.type === "LOGIN_FAILED") {
-      const tabId = getTabId(sender);
-
-      if (!isLoginSender(sender) || tabId === null) {
-        sendResponse({ success: false });
-        return false;
-      }
-
-      pendingLoginAttempts.delete(tabId);
-      sendResponse({ success: true });
-      return false;
-    }
-
-    if (message?.type === "LOGIN_VERIFIED") {
-      const tabId = getTabId(sender);
-
-      if (!isProfileSender(sender) || tabId === null) {
-        sendResponse({
-          success: false,
-          error: "Unauthorized login verification",
-        });
-        return false;
-      }
-
-      const attemptedAt = pendingLoginAttempts.get(tabId);
-
-      // Consume the attempt even when it has expired so a later visit in
-      // this tab cannot be mistaken for the result of this login.
-      pendingLoginAttempts.delete(tabId);
-
-      if (
-        typeof attemptedAt !== "number" ||
-        Date.now() - attemptedAt > ATTEMPT_TTL
-      ) {
-        sendResponse({
-          success: false,
-          error: "No pending login attempt for this tab",
-        });
-        return false;
-      }
-
-      sendResponse({ success: true });
-      return false;
+      const key = `login-attempt-${tabId}`;
+      // Serialize consumption within a tab so two verifiers cannot report success.
+      const operation = (tabOperations.get(tabId) || Promise.resolve()).then(async () => {
+        if (message.type === "LOGIN_ATTEMPTED") {
+          await chrome.storage.session.set({ [key]: Date.now() });
+          return { success: true };
+        }
+        const stored = await chrome.storage.session.get(key);
+        const attemptedAt = stored[key];
+        const pending = typeof attemptedAt === "number" &&
+          Date.now() >= attemptedAt && Date.now() - attemptedAt <= ATTEMPT_TTL;
+        if (message.type === "LOGIN_FAILED" || message.type === "LOGIN_VERIFIED" || !pending) {
+          await chrome.storage.session.remove(key);
+        }
+        if (message.type === "HAS_PENDING_LOGIN") {
+          return { success: true, pending };
+        }
+        if (message.type === "LOGIN_VERIFIED" && !pending) {
+          return { success: false, error: "No pending login attempt for this tab" };
+        }
+        return { success: true };
+      });
+      const completed = operation.then(sendResponse, (error) => {
+        sendResponse({ success: false, error: error.message });
+      }).finally(() => {
+        if (tabOperations.get(tabId) === completed) {
+          tabOperations.delete(tabId);
+        }
+      });
+      tabOperations.set(tabId, completed);
+      return true;
     }
 
     if (message?.type !== "GET_CREDENTIALS") {

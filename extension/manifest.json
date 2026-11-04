@@ -7,10 +7,6 @@
   "permissions": [
     "storage"
   ],
-  "host_permissions": [
-    "https://accounts.khanacademy.org/*",
-    "https://www.khanacademy.org/*"
-  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -21,15 +17,17 @@
         "https://www.khanacademy.org/login*"
       ],
       "js": [
+        "toast.js",
         "content.js"
       ],
       "run_at": "document_idle"
     },
     {
       "matches": [
-        "https://www.khanacademy.org/profile/me*"
+        "https://www.khanacademy.org/*"
       ],
       "js": [
+        "toast.js",
         "verify.js"
       ],
       "run_at": "document_idle"

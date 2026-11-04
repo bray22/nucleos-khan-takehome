@@ -5,7 +5,8 @@
   const PREFIX = "[Khan Auto Login]";
   const PROFILE_HOST = "www.khanacademy.org";
   const PROFILE_PATH = "/profile/me/";
-  const VERIFY_TIMEOUT = 15000;
+  const VERIFY_TIMEOUT = 5 * 60 * 1000;
+  let verifying = false;
 
   function log(message) {
     console.log(`${PREFIX} ${message}`);
@@ -25,6 +26,7 @@
     return Array.from(
       document.querySelectorAll("h1, h2")
     )
+      .filter((element) => element.getClientRects().length > 0)
       .map((element) => element.textContent.trim())
       .filter(Boolean);
   }
@@ -59,16 +61,34 @@
   }
 
   async function verifyLogin() {
-    if (!isProfilePage()) {
+    const pending = await chrome.runtime.sendMessage({ type: "HAS_PENDING_LOGIN" });
+    if (!pending?.success) {
+      throw new Error(pending?.error || "Unable to check pending login");
+    }
+    if (!pending.pending) {
       return;
     }
-
-    log("Profile page detected.");
-    log("Checking authenticated dashboard...");
-
+    if (verifying) {
+      return;
+    }
+    verifying = true;
     const deadline = Date.now() + VERIFY_TIMEOUT;
+    let profileDetected = false;
 
     while (Date.now() < deadline) {
+      // Khan Academy may reach the dashboard with client-side routing, so
+      // the verifier can be injected before /profile/me becomes the path.
+      if (!isProfilePage()) {
+        await sleep(500);
+        continue;
+      }
+
+      if (!profileDetected) {
+        profileDetected = true;
+        log("Profile page detected.");
+        log("Checking authenticated dashboard...");
+      }
+
       if (isAuthenticatedDashboard()) {
         log("Authenticated learner dashboard verified.");
 
@@ -78,10 +98,12 @@
         try {
           const response = await chrome.runtime.sendMessage({
             type: "LOGIN_VERIFIED",
+            url: window.location.href,
           });
 
           if (response?.success) {
             log("Successfully logged in to Khan Academy");
+            khanShowToast("Successfully logged in to Khan Academy", true);
           } else {
             log(
               response?.error ||
@@ -101,15 +123,15 @@
       await sleep(500);
     }
 
-    console.warn(
-      `${PREFIX} Login outcome could not be verified.`
-    );
+    if (profileDetected) {
+      console.warn(
+        `${PREFIX} Login outcome could not be verified.`
+      );
+    }
   }
 
-  verifyLogin().catch((error) => {
-    console.error(
-      `${PREFIX} Verification error:`,
-      error.message
-    );
+  globalThis.khanVerifyLogin = () => verifyLogin().catch((error) => {
+    console.error(`${PREFIX} Verification error:`, error.message);
   });
+  globalThis.khanVerifyLogin();
 })();

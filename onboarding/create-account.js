@@ -1,6 +1,4 @@
 
-require("dotenv").config();
-
 const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
@@ -18,7 +16,48 @@ function log(message) {
   console.log(`[Onboarding] ${message}`);
 }
 
+function isRegistrationConfirmed(snapshot) {
+  const url = new URL(snapshot.url);
+  return url.origin === "https://www.khanacademy.org" &&
+    /^\/profile\/me\/?$/.test(url.pathname) &&
+    snapshot.title === "Dashboard | Khan Academy" &&
+    ["My account", "My profile", "Learner home"]
+      .every((heading) => snapshot.headings.includes(heading)) &&
+    !snapshot.signupVisible;
+}
+
+async function waitForRegistrationConfirmation(page) {
+  while (!page.isClosed()) {
+    let snapshot;
+    try {
+      snapshot = await page.evaluate(() => ({
+        url: location.href,
+        title: document.title,
+        headings: Array.from(document.querySelectorAll("h1, h2"))
+          .filter((element) => element.getClientRects().length > 0)
+          .map((element) => element.textContent.trim()),
+        signupVisible: Array.from(document.querySelectorAll("button"))
+          .some((element) => element.textContent.trim() === "Sign up" &&
+            element.getClientRects().length > 0),
+      }));
+    } catch (error) {
+      if (page.isClosed()) {
+        return false;
+      }
+      if (!error.message.includes("Execution context was destroyed")) {
+        throw error;
+      }
+    }
+    if (snapshot && isRegistrationConfirmed(snapshot)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return false;
+}
+
 async function main() {
+  require("dotenv").config();
   let browser;
 
   try {
@@ -177,8 +216,6 @@ async function main() {
     // Give the application time to respond.
     await page.waitForTimeout(3000);
 
-    log(`Current URL: ${page.url()}`);
-
     // Look for visible validation messages.
     const alerts = await page
       .locator('[role="alert"]')
@@ -191,7 +228,7 @@ async function main() {
     if (errors.length > 0) {
       log("Registration messages:");
       for (const error of errors) {
-        console.log(`  ${error}`);
+        console.log(`  ${error.split(email).join("[email]").split(password).join("[password]")}`);
       }
     }
 
@@ -213,15 +250,35 @@ async function main() {
     );
 
     log("Do not submit registration a second time.");
+    log("Waiting for a visible authenticated learner dashboard in this Chromium tab.");
     log("Close Chromium when finished.");
 
-    // Keep browser open for manual verification.
-    await page.waitForEvent("close", {
-      timeout: 0,
-    });
+    const confirmed = await waitForRegistrationConfirmation(page);
+    if (confirmed) {
+      const marker = JSON.parse(fs.readFileSync(SUBMISSION_MARKER, "utf8"));
+      fs.writeFileSync(SUBMISSION_MARKER, JSON.stringify({
+        ...marker,
+        status: "verified",
+        verifiedAt: new Date().toISOString(),
+        evidence: "Authenticated learner dashboard in fresh registration context",
+      }, null, 2), { mode: 0o600 });
+      log("Account creation confirmed: authenticated learner dashboard reached.");
+      if (!page.isClosed()) {
+        await page.waitForEvent("close", { timeout: 0 });
+      }
+    } else {
+      log("Account creation remains unconfirmed.");
+      process.exitCode = 1;
+    }
 
   } catch (error) {
-    console.error("[Onboarding] Error:", error.message);
+    let message = error.message;
+    for (const value of [process.env.KHAN_EMAIL, process.env.KHAN_PASSWORD]) {
+      if (value) {
+        message = message.split(value).join("[redacted]");
+      }
+    }
+    console.error("[Onboarding] Error:", message);
     process.exitCode = 1;
   } finally {
     if (browser && browser.isConnected()) {
@@ -230,10 +287,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(
-    "[Onboarding] Unexpected error:",
-    error.message
-  );
-  process.exitCode = 1;
-});
+module.exports = { isRegistrationConfirmed, waitForRegistrationConfirmation };
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("[Onboarding] Unexpected error:", error.message);
+    process.exitCode = 1;
+  });
+}

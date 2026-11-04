@@ -8,7 +8,7 @@
     "www.khanacademy.org",
   ];
   const ELEMENT_TIMEOUT = 15000;
-  const AUTHENTICATION_TIMEOUT = 15000;
+  const AUTHENTICATION_TIMEOUT = 5 * 60 * 1000;
 
   // Prevent duplicate initialization in this document.
   if (globalThis.__khanAutoLoginInitialized) {
@@ -64,9 +64,10 @@
   function waitForText(selector, timeout) {
     const getText = () => {
       const element = document.querySelector(selector);
-      const text = element?.textContent?.trim();
+      const text = element?.textContent;
 
-      return text ? { element, text } : null;
+      return text?.trim() && element.getClientRects().length > 0
+        ? { element, text } : null;
     };
     const existing = getText();
 
@@ -158,11 +159,14 @@
 
   async function clearLoginAttempt() {
     try {
-      await chrome.runtime.sendMessage({
+      const response = await chrome.runtime.sendMessage({
         type: "LOGIN_FAILED",
       });
-    } catch {
-      // The original login error remains the useful message to display.
+      if (!response?.success) {
+        throw new Error(response?.error || "Unable to clear login attempt");
+      }
+    } catch (error) {
+      console.error(`${PREFIX} Unable to clear login attempt:`, error.message);
     }
   }
 
@@ -173,16 +177,16 @@
         AUTHENTICATION_TIMEOUT
       );
 
-      await clearLoginAttempt();
-
       // This is Khan Academy's own message. Do not prefix, rewrite, or
       // otherwise change its wording.
       console.error(text);
-    } catch (error) {
-      // A successful login navigates away and destroys this document. If
-      // it is still alive when the deadline expires, verification failed.
+      khanShowToast(text);
       await clearLoginAttempt();
-      console.error(`${PREFIX} ${error.message}`);
+    } catch (error) {
+      if (isLoginPage()) {
+        console.error(`${PREFIX} ${error.message}`);
+        khanShowToast(error.message);
+      }
     }
   }
 
@@ -239,6 +243,7 @@
     // worker associates it with sender.tab.id and only accepts verification
     // from the authenticated dashboard in that same tab.
     await recordLoginAttempt();
+    globalThis.khanVerifyLogin?.();
 
     loginButton.click();
 
