@@ -5,3 +5,5 @@ node_modules/
 extension/config.json
 playwright-report/
 test-results/
+student-registration-debug.png
+*-debug.png
