@@ -10,3 +10,4 @@ student-registration-debug.png
 .env
 .env.*
 !.env.example
+onboarding/.registration-submitted.json
