@@ -306,11 +306,10 @@ email verification, or other account checks.
 
 ## AI tooling
 
-An AI assistant using Copilot SDK in VS Code was used for code inspection,
-implementation assistance, regression tests, and README drafting. Its suggestions
-were checked against the repository and offline tests; those checks are not
-evidence of a successful live account creation or login. The walkthrough should
-explain the code and these limitations, not attribute correctness to AI.
+OpenAI Codex was used to assist with code inspection, implementation, test
+updates, debugging, and README editing. I reviewed all generated changes,
+validated the relevant behavior and tests, and remain responsible for the final
+implementation and technical decisions.
 
 ## Recording and delivery
 
