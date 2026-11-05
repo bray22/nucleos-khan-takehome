@@ -34,18 +34,18 @@ cp .env.example .env
 Edit `.env` using the keys in [.env.example](.env.example):
 
 ```dotenv
+SIGNUP_URL=https://www.khanacademy.org/signup
+BIRTH_MONTH=Jul
+BIRTH_YEAR=1990
 KHAN_EMAIL=your-email@example.com
 KHAN_PASSWORD=your-unique-password
 ```
 
-Use a unique password and an address you control. The script reads these values
-through `dotenv`; existing process environment values take precedence.
-
-Before running, update `BIRTH_MONTH` and `BIRTH_YEAR` in
-[onboarding/create-account.js](onboarding/create-account.js) to the adult
-registrant's actual birth month and year. The current example is `Jul`, `1974`;
-these are source constants, not environment settings. This script is designed
-for the adult learner flow, not child or parent registration.
+Use a unique password and an address you control. Set `BIRTH_MONTH` and
+`BIRTH_YEAR` to the adult registrant's actual birth month and year. The script
+reads all five values through `dotenv`; existing process environment values take
+precedence. This script is designed for the adult learner flow, not child or
+parent registration.
 
 ### Extension credentials
 
@@ -314,8 +314,8 @@ explain the code and these limitations, not attribute correctness to AI.
 
 ## Recording and delivery
 
-**Recording link: not yet supplied.** A real demonstration is still required;
-offline tests are not a substitute. Add the recording URL here before delivery.
+**[Watch the Chrome extension demo](<Khan Academy Auto Login – Chrome Extension Demo.mp4>).**
+A real demonstration is included; offline tests are not a substitute.
 
 Keep the recording at or below four minutes:
 
